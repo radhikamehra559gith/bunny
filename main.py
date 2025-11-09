@@ -1,5 +1,5 @@
 # ========================================
-# Multi-Storage Video Automation (Firebase + Bunny + Auto-Detect)
+# Video Automation — Firebase + Bunny CDN
 # ========================================
 
 import os
@@ -16,16 +16,30 @@ from firebase_admin import credentials, firestore, storage
 # ========================================
 # Load environment variables
 # ========================================
-bot_id = os.getenv("BOT_ID", "bot3")
+bot_id = (os.getenv("BOT_ID") or "bot3").strip()
 
 main_cred_json = os.getenv("FIREBASE_CREDENTIALS_MAIN")
 log_cred_json = os.getenv("FIREBASE_CREDENTIALS_VERIFY")
+bunny_json = os.getenv("BUNNY")
 
 if not main_cred_json or not log_cred_json:
-    raise SystemExit("❌ Missing FIREBASE_CREDENTIALS_MAIN or FIREBASE_CREDENTIALS_VERIFY.")
+    raise SystemExit("❌ Missing FIREBASE_MAIN or FIREBASE_LOGS environment variable.")
 
 main_cred_dict = json.loads(main_cred_json)
 log_cred_dict = json.loads(log_cred_json)
+
+# 🐰 Parse Bunny secret JSON
+if bunny_json:
+    try:
+        bunny_dict = json.loads(bunny_json)
+        BUNNY_STORAGE_ZONE = bunny_dict.get("BUNNY_STORAGE_ZONE")
+        BUNNY_API_KEY = bunny_dict.get("BUNNY_API_KEY")
+        BUNNY_PULL_ZONE_URL = bunny_dict.get("BUNNY_PULL_ZONE_URL")
+    except Exception as e:
+        print("⚠️ Invalid Bunny JSON format in secret:", e)
+        BUNNY_STORAGE_ZONE = BUNNY_API_KEY = BUNNY_PULL_ZONE_URL = None
+else:
+    BUNNY_STORAGE_ZONE = BUNNY_API_KEY = BUNNY_PULL_ZONE_URL = None
 
 # ========================================
 # Initialize Firebase apps
@@ -44,13 +58,6 @@ verify_db = firestore.client(firebase_admin.get_app("log_app"))
 
 print(f"🔥 Connected to main DB: {main_cred_dict['project_id']}")
 print(f"📜 Connected to log DB for {bot_id}")
-
-# ========================================
-# Bunny.net Environment
-# ========================================
-BUNNY_STORAGE_ZONE = os.getenv("BUNNY_STORAGE_ZONE")
-BUNNY_API_KEY = os.getenv("BUNNY_API_KEY")
-BUNNY_PULL_ZONE_URL = os.getenv("BUNNY_PULL_ZONE_URL")
 
 # ========================================
 # Logging System (Daily Limit 5 Hours)
@@ -122,9 +129,6 @@ def create_quality_versions(input_file):
         output_files[q] = output_file
     return output_files
 
-# ========================================
-# Firebase Upload
-# ========================================
 def upload_to_firebase(file_path, quality=None):
     filename = os.path.basename(file_path)
     if quality:
@@ -143,55 +147,37 @@ def upload_to_firebase(file_path, quality=None):
     url = f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/{path.replace('/', '%2F')}?alt=media&token={token}"
     return url
 
-# ========================================
-# Bunny.net Upload
-# ========================================
 def upload_to_bunny(file_path, quality=None):
-    if not all([BUNNY_STORAGE_ZONE, BUNNY_API_KEY, BUNNY_PULL_ZONE_URL]):
-        raise SystemExit("❌ Missing Bunny.net environment variables.")
+    if not (BUNNY_STORAGE_ZONE and BUNNY_API_KEY and BUNNY_PULL_ZONE_URL):
+        raise Exception("❌ Missing Bunny configuration")
 
     filename = os.path.basename(file_path)
-    if quality:
-        remote_path = f"qualities/{quality}/{filename}"
-    elif "thumbnail" in filename:
-        remote_path = f"thumbnails/{filename}"
-    else:
-        remote_path = filename
+    path = f"qualities/{quality}/{filename}" if quality else filename
 
-    bunny_url = f"https://storage.bunnycdn.com/{BUNNY_STORAGE_ZONE}/{remote_path}"
-    headers = {"AccessKey": BUNNY_API_KEY}
+    bunny_url = f"https://storage.bunnycdn.com/{BUNNY_STORAGE_ZONE}/{path}"
+    headers = {
+        "AccessKey": BUNNY_API_KEY,
+        "Content-Type": "application/octet-stream"
+    }
 
+    print(f"🐰 Uploading to: {bunny_url}")
     with open(file_path, "rb") as f:
         response = requests.put(bunny_url, headers=headers, data=f)
-    if response.status_code not in (201, 200):
+
+    if response.status_code not in (200, 201):
         raise Exception(f"Bunny upload failed ({response.status_code}): {response.text}")
 
-    return f"{BUNNY_PULL_ZONE_URL.rstrip('/')}/{remote_path}"
+    public_url = f"{BUNNY_PULL_ZONE_URL.rstrip('/')}/{path}"
+    return public_url
 
-# ========================================
-# Unified Upload Handler
-# ========================================
-def upload_file(file_path, quality=None, provider="firebase"):
-    provider = provider.lower()
-    if provider == "firebase":
+def upload_file(file_path, quality=None, provider="Firebase"):
+    if provider.lower() == "firebase":
         return upload_to_firebase(file_path, quality)
-    elif provider == "bunny":
+    elif provider.lower() == "bunny":
         return upload_to_bunny(file_path, quality)
     else:
-        # fallback: just return local file path
-        print(f"⚠️ Unknown provider '{provider}', keeping local path for file {file_path}")
-        return file_path
-
-# ========================================
-# Auto-Detect Provider by URL
-# ========================================
-def detect_provider_from_url(url):
-    if "firebasestorage.googleapis.com" in url:
-        return "firebase"
-    elif ".b-cdn.net" in url or "storage.bunnycdn.com" in url:
-        return "bunny"
-    else:
-        return "other"
+        # default to Firebase
+        return upload_to_firebase(file_path, quality)
 
 # ========================================
 # Process Unprocessed Videos
@@ -211,16 +197,11 @@ for index, doc in enumerate(unprocessed_docs, start=1):
     print(f"🚀 Processing {index}/{len(unprocessed_docs)} | ID: {doc.id}")
     data = doc.to_dict()
     url = data.get("url")
+    provider = data.get("storageProvider","Firebase")  # default Firebase
 
     if not url:
         print(f"⚠️ Missing URL in {doc.id}")
         continue
-
-    # Detect provider
-    provider = data.get("storageProvider")
-    if not provider:
-        provider = detect_provider_from_url(url)
-        print(f"🔍 Auto-detected provider: {provider}")
 
     # Download
     video_file = "input.mp4"
@@ -243,7 +224,7 @@ for index, doc in enumerate(unprocessed_docs, start=1):
     # Convert & Upload
     converted = create_quality_versions(video_file)
     urls = {q: upload_file(p, q, provider) for q,p in converted.items()}
-    thumb_url = upload_file(thumb_file, None, provider)
+    thumb_url = upload_file(thumb_file, provider=provider)
 
     # Update Firestore
     db.collection(collection_name).document(doc.id).update({
@@ -252,9 +233,9 @@ for index, doc in enumerate(unprocessed_docs, start=1):
         "duration": dur,
         "processed": True,
         "processedAt": datetime.datetime.now().isoformat(),
-        "storageProvider": provider.capitalize()
+        "storageProvider": provider
     })
-    print(f"🔥 Firestore updated for {provider.capitalize()}")
+    print("🔥 Firestore updated.")
 
     shutil.rmtree("output_videos", ignore_errors=True)
     os.remove(video_file)
