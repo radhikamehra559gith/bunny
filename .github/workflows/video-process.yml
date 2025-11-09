@@ -1,65 +1,35 @@
-name: 🎬 Video Processor
+name: Video Processing
 
 on:
-  # ✅ Manual run from GitHub Actions tab
-  workflow_dispatch:
-
-  # ✅ Optional — uncomment if you want it to run on code pushes too
-  # push:
-  #   branches:
-  #     - main
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches:
+      - main      # Run on push to main branch
 
 jobs:
-  process_videos:
+  process-videos:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6h limit
+
+    env:
+      BOT_ID: bot3
+      FIREBASE_CREDENTIALS_MAIN: ${{ secrets.FIREBASE_CREDENTIALS_MAIN }}
+      FIREBASE_CREDENTIALS_VERIFY: ${{ secrets.FIREBASE_CREDENTIALS_VERIFY }}
+      BUNNY: ${{ secrets.BUNNY }}
 
     steps:
-      # 🧩 Checkout your repo
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-      # 🧰 Setup Python
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: 3.11
 
-      # ⚙️ Install dependencies
-      - name: 📦 Install system & Python dependencies
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
           python -m pip install --upgrade pip
-          pip install requests firebase-admin
+          pip install --no-cache-dir firebase-admin requests
 
-      # 🔐 Setup environment variables from GitHub Secrets
-      - name: 🔑 Set environment variables
-        env:
-          BOT_ID: ${{ secrets.BOT_ID }}
-          FIREBASE_CREDENTIALS_MAIN: ${{ secrets.FIREBASE_CREDENTIALS_MAIN }}
-          FIREBASE_CREDENTIALS_VERIFY: ${{ secrets.FIREBASE_CREDENTIALS_VERIFY }}
-          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
-          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
-          BUNNY_PULL_ZONE_URL: ${{ secrets.BUNNY_PULL_ZONE_URL }}
-        run: |
-          echo "✅ Environment variables loaded"
-
-      # 🚀 Run the main video automation script
-      - name: 🎞️ Run Video Automation Script
-        env:
-          BOT_ID: ${{ secrets.BOT_ID }}
-          FIREBASE_CREDENTIALS_MAIN: ${{ secrets.FIREBASE_CREDENTIALS_MAIN }}
-          FIREBASE_CREDENTIALS_VERIFY: ${{ secrets.FIREBASE_CREDENTIALS_VERIFY }}
-          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
-          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
-          BUNNY_PULL_ZONE_URL: ${{ secrets.BUNNY_PULL_ZONE_URL }}
+      - name: Run Video Processing
         run: |
           python main.py
-
-      # 🧹 Clean up workspace after run
-      - name: 🧽 Cleanup
-        if: always()
-        run: |
-          rm -rf output_videos || true
-          rm -f input.mp4 thumb.jpg || true
