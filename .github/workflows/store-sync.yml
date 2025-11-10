@@ -19,11 +19,11 @@ jobs:
         python-version: "3.11"
 
     - name: Install dependencies
-      run: pip install firebase-admin==7.1.0 google-cloud-firestore==2.15.0
-
-    - name: Write main DB JSON
       run: |
-        echo "${{ secrets.MAIN_DB_JSON_B64 }}" | base64 --decode > firebase-keys.json
+        pip install --upgrade pip
+        pip install firebase-admin
 
     - name: Run Firestore sync
+      env:
+        MAIN_DB_JSON: ${{ secrets.MAIN_DB_JSON }}
       run: python run.py
