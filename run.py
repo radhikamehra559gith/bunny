@@ -4,15 +4,14 @@ from datetime import datetime, timezone
 import json
 import os
 import traceback
+import base64
 
-def init_db_from_json(json_str, app_name):
-    """
-    Initialize Firestore client from JSON string credentials
-    """
+def init_db_from_json_str(json_str, app_name):
+    """Initialize Firestore client from JSON string credentials."""
     try:
         cred_dict = json.loads(json_str)
     except json.JSONDecodeError as e:
-        print("❌ JSON decode error. Please check your Firebase JSON format.")
+        print("❌ JSON decode error. Check your Firebase JSON format.")
         raise e
 
     if app_name not in firebase_admin._apps:
@@ -21,22 +20,26 @@ def init_db_from_json(json_str, app_name):
         print(f"✅ Initialized Firebase app: {app_name}")
     return firestore.client(app=firebase_admin.get_app(app_name))
 
-# Load main DB credentials
-main_db_json_path = os.environ.get("MAIN_DB_JSON_FILE", "firebase-keys.json")
-if not os.path.exists(main_db_json_path):
-    raise FileNotFoundError(f"{main_db_json_path} not found")
+# ------------------------------
+# Load main DB JSON directly from GitHub Secret
+# The secret should be base64 encoded (MULTILINE JSON safe)
+# ------------------------------
+main_db_json_b64 = os.environ.get("MAIN_DB_JSON_B64")
+if not main_db_json_b64:
+    raise EnvironmentError("MAIN_DB_JSON_B64 secret not found!")
 
-with open(main_db_json_path, "r") as f:
-    json_str = f.read()
-main_db = init_db_from_json(json_str, "main")
+main_db_json_str = base64.b64decode(main_db_json_b64).decode("utf-8")
+main_db = init_db_from_json_str(main_db_json_str, "main")
 
+# ------------------------------
 # Load all user databases dynamically from 'config/Firebase' document
+# ------------------------------
 user_dbs = {}
 db_doc = main_db.collection("config").document("Firebase").get()
 if db_doc.exists:
     db_data = db_doc.to_dict()
     for key, val in db_data.items():
-        user_dbs[key] = init_db_from_json(val, key)
+        user_dbs[key] = init_db_from_json_str(val, key)
         print(f"✅ Initialized user DB client: {key}")
 else:
     print("⚠️ No 'Firebase' doc found in 'config' collection")
