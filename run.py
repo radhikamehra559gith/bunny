@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import json
 import os
 import traceback
-import base64
 
 def init_db_from_json_str(json_str, app_name):
     """Initialize Firestore client from JSON string credentials."""
@@ -22,13 +21,11 @@ def init_db_from_json_str(json_str, app_name):
 
 # ------------------------------
 # Load main DB JSON directly from GitHub Secret
-# The secret should be base64 encoded (MULTILINE JSON safe)
 # ------------------------------
-main_db_json_b64 = os.environ.get("MAIN_DB_JSON_B64")
-if not main_db_json_b64:
-    raise EnvironmentError("MAIN_DB_JSON_B64 secret not found!")
+main_db_json_str = os.environ.get("MAIN_DB_JSON")
+if not main_db_json_str:
+    raise EnvironmentError("MAIN_DB_JSON secret not found!")
 
-main_db_json_str = base64.b64decode(main_db_json_b64).decode("utf-8")
 main_db = init_db_from_json_str(main_db_json_str, "main")
 
 # ------------------------------
