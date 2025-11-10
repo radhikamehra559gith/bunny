@@ -21,8 +21,9 @@ jobs:
     - name: Install dependencies
       run: pip install firebase-admin==7.1.0
 
-    - name: Write main DB JSON
-      run: echo "${{ secrets.MAIN_DB_JSON }}" > firebase-keys.json
+- name: Write main DB JSON
+  run: |
+    echo '${{ secrets.MAIN_DB_JSON }}' > firebase-keys.json
 
     - name: Run Firestore sync
       run: python run.py
