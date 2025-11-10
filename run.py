@@ -9,7 +9,12 @@ def init_db_from_json(json_str, app_name):
     """
     Initialize Firestore client from JSON string credentials
     """
-    cred_dict = json.loads(json_str)
+    try:
+        cred_dict = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        print("❌ JSON decode error. Please check your Firebase JSON format.")
+        raise e
+
     if app_name not in firebase_admin._apps:
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred, name=app_name)
@@ -21,8 +26,9 @@ main_db_json_path = os.environ.get("MAIN_DB_JSON_FILE", "firebase-keys.json")
 if not os.path.exists(main_db_json_path):
     raise FileNotFoundError(f"{main_db_json_path} not found")
 
-with open(main_db_json_path) as f:
-    main_db = init_db_from_json(f.read(), "main")
+with open(main_db_json_path, "r") as f:
+    json_str = f.read()
+main_db = init_db_from_json(json_str, "main")
 
 # Load all user databases dynamically from 'config/Firebase' document
 user_dbs = {}
@@ -39,9 +45,6 @@ else:
 # Copy functions
 # ------------------------------
 def copy_doc_with_subcollections(src_doc_ref, dest_doc_ref):
-    """
-    Copy a document including all its subcollections recursively
-    """
     doc_data = src_doc_ref.get().to_dict()
     if doc_data:
         dest_doc_ref.set(doc_data, merge=True)
