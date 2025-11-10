@@ -1,0 +1,28 @@
+name: Firestore Sync
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # every day at midnight UTC
+  workflow_dispatch:       # manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: pip install firebase-admin==7.6.0
+
+    - name: Write main DB JSON
+      run: echo "${{ secrets.MAIN_DB_JSON }}" > firebase-keys.json
+
+    - name: Run Firestore sync
+      run: python run.py
